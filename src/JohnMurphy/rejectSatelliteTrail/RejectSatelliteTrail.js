@@ -1,4 +1,4 @@
-/* global PixelMath, Parameters, View, ImageWindow, Dialog, VERSION, TITLE, TextAlign_Right, TextAlign_VertCenter, StdIcon_Error, StdButton_Ok, StdButton_Cancel */
+/* global PixelMath, Parameters, View, ImageWindow, Dialog, VERSION, TITLE, TextAlign_Right, TextAlign_VertCenter, StdIcon_Error, StdButton_Ok, StdButton_Cancel, Console, CoreApplication, FrameStyle_Box, StdIcon_Information, StdCursor_Checkmark, StdCursor_Crossmark */
 
 // Version 1.0 (c) John Murphy 20th-Oct-2019
 //
@@ -22,88 +22,88 @@
 Copyright &copy; 2020 John Murphy.<br/>
 
 #include <pjsr/UndoFlag.jsh>
-#include "lib/DialogLib.js"
+#include <pjsr/FrameStyle.jsh>
+#include <pjsr/TextAlign.jsh>
+#include <pjsr/StdCursor.jsh>
+#include <pjsr/Sizer.jsh>
+#include <pjsr/NumericControl.jsh>
 
 #define VERSION  "1.0"
 #define TITLE "RejectSatelliteTrail"
 #define HORIZONTAL 0
 #define VERTICAL 1
 
-function drawBlackLine(data, view){
-    if (view !== null){
-        if (data.x0 === 0 && data.y0 ===0 && data.x1 === 0 && data.y1 === 0){
-            return;
-        }
-        
+/**
+ * Draw a black line through (x0,y0) to (x1,y1), with specified width
+ * @param {RejectSatelliteTrailData} data
+ * @param {View} view Supply Preview for real time update, MainView on execution
+ * @param {Boolean} swapFile Set this to true for MainView
+ */
+function drawBlackLine(data, view, swapFile){
+    if (view !== null && !view.isNull && 
+            !(data.x0 === 0 && data.y0 ===0 && data.x1 === 0 && data.y1 === 0)){
+            
         let distanceFromLine = data.lineWidth / 2;
         var P = new PixelMath;
         P.expression = "iif (" +
             "d2line(" + data.x0 + ", " + data.y0 + ", " + data.x1 + ", " + data.y1 + ") < " + 
             distanceFromLine + ", 0, $T)";
-        P.useSingleExpression = true;
-        P.symbols = "";
-        P.generateOutput = true;
-        P.singleThreaded = false;
-        P.use64BitWorkingImage = false;
-        P.rescale = false;
         P.truncate = false;
-        P.createNewImage = false;
-        P.showNewImage = true;
-        P.newImageAlpha = false;
-        P.newImageColorSpace = PixelMath.prototype.SameAsTarget;
-        P.newImageSampleFormat = PixelMath.prototype.SameAsTarget;
-        P.executeOn(view, true);
+        P.executeOn(view, swapFile);
     }
 }
 
-function updatePreview(data, dialog){
-    if (data.preview === null) {
-        dialog.undoRedoToggle_Button.enabled = false;
-        dialog.setDrawLineFlag(false);
-        dialog.scrollToLineStart_Button.enabled = false;
-        dialog.scrollToLineEnd_Button.enabled = false;
-    } else if (data.x0 === 0 && data.y0 === 0 && data.x1 === 0 && data.y1 === 0) {
-        resetPreview(data.preview);
-        dialog.undoRedoToggle_Button.enabled = false;
-        dialog.setDrawLineFlag(false);
-        dialog.scrollToLineStart_Button.enabled = false;
-        dialog.scrollToLineEnd_Button.enabled = false;
-    } else {
-        drawBlackLine(data, data.preview);
-        dialog.undoRedoToggle_Button.enabled = true;
-        dialog.setDrawLineFlag(true);
-        dialog.scrollToLineStart_Button.enabled = true;
-        dialog.scrollToLineEnd_Button.enabled = true;
-    }
-}
-
+/**
+ * Reset the preview.
+ * @param {View} preview The Preview to be reset
+ */
 function resetPreview(preview){
-    if (preview !== null){
+    if (preview !== null && !preview.isNull){
+        // Is there a better way to reset the preview?
         var P = new PixelMath;
         P.expression = "$T";
-        P.useSingleExpression = true;
-        P.symbols = "";
-        P.generateOutput = true;
-        P.singleThreaded = false;
-        P.use64BitWorkingImage = false;
-        P.rescale = false;
         P.truncate = false;
-        P.createNewImage = false;
-        P.showNewImage = true;
-        P.newImageAlpha = false;
-        P.newImageColorSpace = PixelMath.prototype.SameAsTarget;
-        P.newImageSampleFormat = PixelMath.prototype.SameAsTarget;
         P.executeOn(preview, false);
     }
+}
+
+/**
+ * If the preview exists, and there is valid line data, draw the black line.
+ * If the preview exists, but there is no valid line data, reset the preview
+ * Set the enabled state of the undoRedo, scrollToLineStart and scrollToLineEnd buttons.
+ * @param {RejectSatelliteTrailData} data
+ * @param {RejectSatelliteTrailDailog} dialog
+ */
+function updatePreview(data, dialog){
+    
+    function enable(enableFlag){
+        dialog.undoRedoToggle_Button.enabled = enableFlag;
+        dialog.scrollToLineStart_Button.enabled = enableFlag;
+        dialog.scrollToLineEnd_Button.enabled = enableFlag;
+    }
+    
+    if (data.preview === null || data.preview.isNull) {
+        enable(false);
+    } else if (data.x0 === 0 && data.y0 === 0 && data.x1 === 0 && data.y1 === 0) {
+        resetPreview(data.preview);
+        enable(false);
+    } else {
+        drawBlackLine(data, data.preview, false);
+        enable(true);
+    }
+    // The only situation that the undo/redo button displays 'Redo' is
+    // when the 'Undo' button is pressed. In all other situations it should 
+    // display 'Undo' (but the button may be enabled or disabled).
+    dialog.setUndo();
 }
 
 // -----------------------------------------------------------------------------
 // Form/Dialog data
 // -----------------------------------------------------------------------------
-function RejectLineData() {
+function RejectSatelliteTrailData() {
     // Used to populate the contents of a saved process icon
     this.saveParameters = function () {
-        if (this.targetView.isMainView) {
+        if (this.targetView !== null && !this.targetView.isNull) {
             Parameters.set("targetView", this.targetView.fullId);
         }
         Parameters.set("x0", this.x0);
@@ -134,7 +134,6 @@ function RejectLineData() {
         this.x1 = 0;
         this.y1 = 0;
         this.lineWidth = 1;
-        this.drawLineFlag = false;
     };
 
     // Used when the user presses the reset button
@@ -145,6 +144,8 @@ function RejectLineData() {
         rejectLineDialog.endX_spinBox.value = this.x1;
         rejectLineDialog.endY_spinBox.value = this.y1;
         rejectLineDialog.lineWidth_Control.setValue(this.lineWidth);
+        // This will reset the preview, set undo button to 'Undo', and disable
+        // the 'Undo' and several other buttons
         updatePreview(this, rejectLineDialog);
     };
 
@@ -153,34 +154,145 @@ function RejectLineData() {
     
 }
 
+/**
+ * Determine the line from two opposite corners of the preview and draw it.
+ * @param {RejectSatelliteTrailDailog} dialog
+ * @param {RejectSatelliteTrailData} data
+ * @param {Boolean} topLeft_to_bottomRight
+ */
 function getLineFromPreview(dialog, data, topLeft_to_bottomRight){
-        let view = dialog.previewImage_ViewList.currentView;
-        if (view !== null && view.isPreview) {
-            let previewRect = view.window.previewRect(view);
-            if (topLeft_to_bottomRight){
-                data.x0 = previewRect.x0;
-                data.y0 = previewRect.y0;
-                data.x1 = previewRect.x1 - 1;
-                data.y1 = previewRect.y1 - 1;
-            } else {
-                data.x0 = previewRect.x0;
-                data.y0 = previewRect.y1 - 1;
-                data.x1 = previewRect.x1 - 1;
-                data.y1 = previewRect.y0;
-            }
-            dialog.startX_spinBox.value = data.x0;
-            dialog.startY_spinBox.value = data.y0;
-            dialog.endX_spinBox.value = data.x1;
-            dialog.endY_spinBox.value = data.y1;
-            
-            updatePreview(data, dialog);
+    let view = dialog.previewImage_ViewList.currentView;
+    if (view !== null && !view.isNull) {
+        let previewRect = view.window.previewRect(view);
+        data.x0 = previewRect.x0;
+        data.x1 = previewRect.x1 - 1;
+        if (topLeft_to_bottomRight){
+            data.y0 = previewRect.y0;
+            data.y1 = previewRect.y1 - 1;
+        } else {
+            // bottomLeft_to_topRight
+            data.y0 = previewRect.y1 - 1;
+            data.y1 = previewRect.y0;
         }
+        dialog.startX_spinBox.value = data.x0;
+        dialog.startY_spinBox.value = data.y0;
+        dialog.endX_spinBox.value = data.x1;
+        dialog.endY_spinBox.value = data.y1;
+
+        // Draw the line and enable undo button
+        updatePreview(data, dialog);
     }
+}
 
 // The main dialog function
-function RejectLineDialog(data) {
+function RejectSatelliteTrailDailog(data) {
     this.__base__ = Dialog;
     this.__base__();
+
+    /**
+     * @param {String} text
+     * @returns {Label} label in FrameStyle_Box
+     */
+    function createTitleLabel(text){
+        let titleLabel = new Label();
+        titleLabel.frameStyle = FrameStyle_Box;
+        titleLabel.margin = 4;
+        titleLabel.wordWrapping = true;
+        titleLabel.useRichText = true;
+        titleLabel.text = text;
+        return titleLabel;
+    }
+
+    /**
+     * Create HorizontalSizer that contains newInstance, documentation, Cancel & OK buttons
+     * @param {Dialog} dialog
+     * @param {Object} data
+     * @param {String} helpMsgTitle
+     * @param {String} helpMsg
+     * @param {String} scriptName If not null, display html file 
+     * @param {String} okToolTip If not null, add this tooltip to ok_Button
+     * (C:\Program Files\PixInsight\doc\scripts\scriptName\scriptName.html)
+     * @returns {HorizontalSizer}
+     */
+    function createWindowControlButtons(dialog, data, helpMsgTitle, helpMsg, scriptName, okToolTip){
+        let newInstanceIcon = dialog.scaledResource(":/process-interface/new-instance.png");
+
+        let ok_Button = new PushButton();
+        ok_Button.text = "OK";
+        ok_Button.cursor = new Cursor(StdCursor_Checkmark);
+        ok_Button.onClick = function () {
+            dialog.ok();
+        };
+        if (okToolTip !== undefined && okToolTip !== null){
+            ok_Button.toolTip = okToolTip;
+        }
+
+        let cancel_Button = new PushButton();
+        cancel_Button.text = "Cancel";
+        cancel_Button.cursor = new Cursor(StdCursor_Crossmark);
+        cancel_Button.onClick = function () {
+            dialog.cancel();
+        };
+
+        let buttons_Sizer = new HorizontalSizer;
+        buttons_Sizer.spacing = 6;
+
+        // New Instance button
+        let newInstance_Button = new ToolButton();
+        newInstance_Button.icon = newInstanceIcon;
+        newInstance_Button.setScaledFixedSize(24, 24);
+        newInstance_Button.toolTip = "Save as Process Icon";
+        newInstance_Button.onMousePress = function () {
+            this.hasFocus = true;
+            this.pushed = false;
+            data.saveParameters();
+            dialog.newInstance();
+        };
+
+        let browseDocumentationButton = new ToolButton();
+        browseDocumentationButton.icon = ":/process-interface/browse-documentation.png";
+        browseDocumentationButton.toolTip =
+                "<p>Opens a browser to view the script's documentation.</p>";
+        browseDocumentationButton.onClick = function () {
+            if (scriptName !== undefined && scriptName !== null){
+                let ok = Dialog.browseScriptDocumentation(scriptName);
+                if (ok) return;
+            }
+            (new MessageBox(
+                    helpMsg,
+                    helpMsgTitle,
+                    StdIcon_Information,
+                    StdButton_Ok
+                    )).execute();
+        };
+
+        buttons_Sizer.add(newInstance_Button);
+        buttons_Sizer.add(browseDocumentationButton);
+
+        let resetButton = new ToolButton();
+
+        resetButton.icon = ":/images/icons/reset.png";
+        resetButton.toolTip = "<p>Resets the dialog's parameters.";
+        resetButton.onClick = function () {
+            data.resetParameters(dialog);
+        };
+
+        buttons_Sizer.add(resetButton);
+        buttons_Sizer.addStretch();
+        buttons_Sizer.add(ok_Button);
+        buttons_Sizer.add(cancel_Button);
+        return buttons_Sizer;
+    }
+
+    function createGroupBox(dialog, title){
+        let groupBox = new GroupBox(dialog);
+        groupBox.title = title;
+        groupBox.sizer = new VerticalSizer;
+        groupBox.sizer.margin = 6;
+        groupBox.sizer.spacing = 6;
+        return groupBox;
+    }
+
 
     let self = this;
     //-------------------------------------------------------
@@ -199,6 +311,9 @@ function RejectLineDialog(data) {
         if (Parameters.isViewTarget && 
                 !(data.x0 === 0 && data.y0 === 0 && data.x1 === 0 && data.y1 === 0)){
             // Started from processInstance
+            // Create or update the 'linePreview' preview to the stored line start and end points.
+            // This is necessary because the the preview that existed when the process icon was created
+            // might not still exist.
             let linePreview = activeWindow.previewById("linePreview");
             if (!linePreview.isNull){
                 activeWindow.modifyPreview( linePreview, 
@@ -209,6 +324,8 @@ function RejectLineDialog(data) {
             data.preview = linePreview;
             activeWindow.currentView = data.preview;
         } else if (activeWindow.numberOfPreviews === 1) {
+            // Only default the preview selection if there is only one preview.
+            // If there are more than one, the user needs to decide.
             data.preview = activeWindow.previews[0];
             resetPreview(data.preview);
             activeWindow.currentView = data.preview;
@@ -216,6 +333,7 @@ function RejectLineDialog(data) {
             data.preview = null;
         }
     } else {
+        // There are no open windows. The user will only be able to open the help.
         data.targetView = null;
         data.preview = null;
     }
@@ -226,6 +344,7 @@ function RejectLineDialog(data) {
     let targetImage_Label = new Label(this);
     targetImage_Label.text = "Target view:";
     targetImage_Label.textAlignment = TextAlign_Right | TextAlign_VertCenter;
+    targetImage_Label.toolTip = "<p>Draw black line into this image</p>";
 
     this.targetImage_ViewList = new ViewList(this);
     this.targetImage_ViewList.getMainViews();
@@ -233,7 +352,6 @@ function RejectLineDialog(data) {
     if (data.targetView !== null){
         this.targetImage_ViewList.currentView = data.targetView;
     }
-    this.targetImage_ViewList.toolTip = "<p>Draw black line into this image</p>";
     this.targetImage_ViewList.onViewSelected = function (view) {
         data.targetView = view;
         if (!data.targetView.isNull){
@@ -250,11 +368,12 @@ function RejectLineDialog(data) {
     previewImage_Label.text = "Preview:";
     previewImage_Label.minWidth = this.font.width("Target view:");
     previewImage_Label.textAlignment = TextAlign_Right | TextAlign_VertCenter;
+    previewImage_Label.toolTip = "<p>The preview's diagonal is used to initialize the line.</p>" +
+            "<p>The preview is also used to show live updates as line parameters are modified</p>";
 
     this.previewImage_ViewList = new ViewList(this);
     this.previewImage_ViewList.getPreviews();
     this.previewImage_ViewList.minWidth = 300;
-    this.previewImage_ViewList.toolTip = "<p>Initialize the line from a preview diagonal.</p>";
     this.previewImage_ViewList.onViewSelected = function (preview) {
         if (preview.isNull){
             if (data.preview !== null){
@@ -403,29 +522,27 @@ function RejectLineDialog(data) {
         updatePreview(data, self.dialog);
     };
     
-    this.undoRedoToggle_Button = new PushButton();
-    this.undoRedoToggle_Button.onClick = function () {
-        if (data.drawLineFlag){
-            self.setDrawLineFlag(false);
-            resetPreview(data.preview);
-        } else {
-            updatePreview(data, this.dialog);
-        }
+    function undo(){
+        resetPreview(data.preview);
+        self.undoRedoToggle_Button.onClick = redo;
+        self.undoRedoToggle_Button.icon = new Bitmap(":/toolbar/preview-redo.png");
+        self.undoRedoToggle_Button.text = "Redo";
+        self.undoRedoToggle_Button.toolTip = "Redo preview";
+    }
+    function redo(){
+        updatePreview(data, this.dialog);
+        self.setUndo();
+    }
+    
+    this.setUndo = function(){
+        self.undoRedoToggle_Button.onClick = undo;
+        self.undoRedoToggle_Button.icon = new Bitmap(":/toolbar/preview-undo.png");
+        self.undoRedoToggle_Button.text = "Undo";
+        self.undoRedoToggle_Button.toolTip = "Undo preview";
     };
     
-    this.setDrawLineFlag = function (drawLineFlag){
-        data.drawLineFlag = drawLineFlag;
-        if (drawLineFlag){
-            this.undoRedoToggle_Button.icon = new Bitmap(":/toolbar/preview-undo.png");
-            this.undoRedoToggle_Button.text = "Undo";
-            this.undoRedoToggle_Button.toolTip = "Undo preview";
-        } else {
-            self.undoRedoToggle_Button.icon = new Bitmap(":/toolbar/preview-redo.png");
-            self.undoRedoToggle_Button.text = "Redo";
-            self.undoRedoToggle_Button.toolTip = "Redo preview";
-        }
-    };
-    this.setDrawLineFlag(true);
+    this.undoRedoToggle_Button = new PushButton();
+    this.setUndo();
     
     let end_Sizer = new HorizontalSizer;
     end_Sizer.spacing = 4;
@@ -680,7 +797,7 @@ function RejectLineDialog(data) {
             "<p>To install the help files, unzip 'RejectSatelliteTrailHelp.zip' to " +
             "'[PixInsight]/doc/scripts/'</p>" +
             "<p>For example, on Windows, the correct installation would include:</p>" +
-            "<p>C:/Program Files/PixInsight/doc/scripts/RejectSatelliteTrail/SplitMosaicTile.html</p>" +
+            "<p>C:/Program Files/PixInsight/doc/scripts/RejectSatelliteTrail/RejectSatelliteTrail.html</p>" +
             "<p>C:/Program Files/PixInsight/doc/scripts/RejectSatelliteTrail/images/</p>";
 
     let buttons_Sizer = createWindowControlButtons(this.dialog, data,
@@ -710,7 +827,7 @@ function RejectLineDialog(data) {
 }
 
 // Our dialog inherits all properties and methods from the core Dialog object.
-RejectLineDialog.prototype = new Dialog;
+RejectSatelliteTrailDailog.prototype = new Dialog;
 
 // Mosaic Linear Fit main process
 function main() {
@@ -718,12 +835,37 @@ function main() {
     const MINOR = 8;
     const RELEASE = 8;
     const REVISION = 4;
+    
+    function isVersionOk(major, minor, release, revision){
+        if (CoreApplication.versionMajor > major)
+            return true;
+        if (CoreApplication.versionMajor < major)
+            return false;
+        if (CoreApplication.versionMinor > minor)
+            return true;
+        if (CoreApplication.versionMinor < minor)
+            return false;
+        if (CoreApplication.versionRelease > release)
+            return true;
+        if (CoreApplication.versionRelease < release)
+            return false;
+
+        return (CoreApplication.versionRevision >= revision);
+    }
+
+    function displayVersionWarning(major, minor, release, revision){
+        Console.criticalln("PixInsight version:  ", 
+            CoreApplication.versionMajor, ".", CoreApplication.versionMinor,
+            ".", CoreApplication.versionRelease, "-", CoreApplication.versionRevision);
+        Console.criticalln("Minimum requirement: ", major, ".", minor, ".", release, "-", revision);
+    }
+    
     if (!isVersionOk(MAJOR, MINOR, RELEASE, REVISION)){
         displayVersionWarning(MAJOR, MINOR, RELEASE, REVISION);
     }
     
     // Create dialog, start looping
-    let data = new RejectLineData();
+    let data = new RejectSatelliteTrailData();
 
     if (Parameters.isGlobalTarget){
         (new MessageBox("Error: Unable to run in global context", TITLE, StdIcon_Error, StdButton_Ok)).execute();
@@ -734,7 +876,7 @@ function main() {
         data.loadParameters();
     }
 
-    let rejectLineDialog = new RejectLineDialog(data);
+    let rejectLineDialog = new RejectSatelliteTrailDailog(data);
     console.writeln("=================================================");
     console.writeln("<b>", TITLE, " ", VERSION, "</b>:");
     console.hide();
@@ -756,8 +898,8 @@ function main() {
             } 
         }
 
-        // Calculate and apply the linear fit
-        drawBlackLine(data, data.targetView);
+        // Calculate and apply the line
+        drawBlackLine(data, data.targetView, true);
 
     }
 
