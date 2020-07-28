@@ -38,16 +38,26 @@ Copyright &copy; 2020 John Murphy.<br/>
  * @param {RejectSatelliteTrailData} data
  * @param {View} view Supply Preview for real time update, MainView on execution
  * @param {Boolean} swapFile Set this to true for MainView
+ * @param {Boolean} createDefectMap If true, a defect map image is created
  */
-function drawBlackLine(data, view, swapFile){
+function drawBlackLine(data, view, swapFile, createDefectMap){
     if (view !== null && !view.isNull && 
             !(data.x0 === 0 && data.y0 ===0 && data.x1 === 0 && data.y1 === 0)){
             
         let distanceFromLine = data.lineWidth / 2;
         var P = new PixelMath;
-        P.expression = "iif (" +
-            "d2line(" + data.x0 + ", " + data.y0 + ", " + data.x1 + ", " + data.y1 + ") < " + 
-            distanceFromLine + ", 0, $T)";
+        if (createDefectMap){
+            P.createNewImage = true;
+            P.showNewImage = true;
+            P.newImageId = "DefectMap";
+            P.expression = "iif (" +
+                "d2line(" + data.x0 + ", " + data.y0 + ", " + data.x1 + ", " + data.y1 + ") < " + 
+                distanceFromLine + ", 0, 1)";
+        } else {
+            P.expression = "iif (" +
+                "d2line(" + data.x0 + ", " + data.y0 + ", " + data.x1 + ", " + data.y1 + ") < " + 
+                distanceFromLine + ", 0, $T)";
+        }
         P.truncate = false;
         P.executeOn(view, swapFile);
     }
@@ -88,7 +98,7 @@ function updatePreview(data, dialog){
         resetPreview(data.preview);
         enable(false);
     } else {
-        drawBlackLine(data, data.preview, false);
+        drawBlackLine(data, data.preview, false, false);
         enable(true);
     }
     // The only situation that the undo/redo button displays 'Redo' is
@@ -201,87 +211,6 @@ function RejectSatelliteTrailDailog(data) {
         titleLabel.useRichText = true;
         titleLabel.text = text;
         return titleLabel;
-    }
-
-    /**
-     * Create HorizontalSizer that contains newInstance, documentation, Cancel & OK buttons
-     * @param {Dialog} dialog
-     * @param {Object} data
-     * @param {String} helpMsgTitle
-     * @param {String} helpMsg
-     * @param {String} scriptName If not null, display html file 
-     * @param {String} okToolTip If not null, add this tooltip to ok_Button
-     * (C:\Program Files\PixInsight\doc\scripts\scriptName\scriptName.html)
-     * @returns {HorizontalSizer}
-     */
-    function createWindowControlButtons(dialog, data, helpMsgTitle, helpMsg, scriptName, okToolTip){
-        let newInstanceIcon = dialog.scaledResource(":/process-interface/new-instance.png");
-
-        let ok_Button = new PushButton();
-        ok_Button.text = "OK";
-        ok_Button.cursor = new Cursor(StdCursor_Checkmark);
-        ok_Button.onClick = function () {
-            dialog.ok();
-        };
-        if (okToolTip !== undefined && okToolTip !== null){
-            ok_Button.toolTip = okToolTip;
-        }
-
-        let cancel_Button = new PushButton();
-        cancel_Button.text = "Cancel";
-        cancel_Button.cursor = new Cursor(StdCursor_Crossmark);
-        cancel_Button.onClick = function () {
-            dialog.cancel();
-        };
-
-        let buttons_Sizer = new HorizontalSizer;
-        buttons_Sizer.spacing = 6;
-
-        // New Instance button
-        let newInstance_Button = new ToolButton();
-        newInstance_Button.icon = newInstanceIcon;
-        newInstance_Button.setScaledFixedSize(24, 24);
-        newInstance_Button.toolTip = "Save as Process Icon";
-        newInstance_Button.onMousePress = function () {
-            this.hasFocus = true;
-            this.pushed = false;
-            data.saveParameters();
-            dialog.newInstance();
-        };
-
-        let browseDocumentationButton = new ToolButton();
-        browseDocumentationButton.icon = ":/process-interface/browse-documentation.png";
-        browseDocumentationButton.toolTip =
-                "<p>Opens a browser to view the script's documentation.</p>";
-        browseDocumentationButton.onClick = function () {
-            if (scriptName !== undefined && scriptName !== null){
-                let ok = Dialog.browseScriptDocumentation(scriptName);
-                if (ok) return;
-            }
-            (new MessageBox(
-                    helpMsg,
-                    helpMsgTitle,
-                    StdIcon_Information,
-                    StdButton_Ok
-                    )).execute();
-        };
-
-        buttons_Sizer.add(newInstance_Button);
-        buttons_Sizer.add(browseDocumentationButton);
-
-        let resetButton = new ToolButton();
-
-        resetButton.icon = ":/images/icons/reset.png";
-        resetButton.toolTip = "<p>Resets the dialog's parameters.";
-        resetButton.onClick = function () {
-            data.resetParameters(dialog);
-        };
-
-        buttons_Sizer.add(resetButton);
-        buttons_Sizer.addStretch();
-        buttons_Sizer.add(ok_Button);
-        buttons_Sizer.add(cancel_Button);
-        return buttons_Sizer;
     }
 
     function createGroupBox(dialog, title){
@@ -800,8 +729,87 @@ function RejectSatelliteTrailDailog(data) {
             "<p>C:/Program Files/PixInsight/doc/scripts/RejectSatelliteTrail/RejectSatelliteTrail.html</p>" +
             "<p>C:/Program Files/PixInsight/doc/scripts/RejectSatelliteTrail/images/</p>";
 
-    let buttons_Sizer = createWindowControlButtons(this.dialog, data,
-            helpWindowTitle, HELP_MSG, "RejectSatelliteTrail");
+    //-------------------------------------------------------
+    // Control buttons
+    //-------------------------------------------------------
+    let scriptName = "RejectSatelliteTrail";
+    let newInstanceIcon = this.dialog.scaledResource(":/process-interface/new-instance.png");
+
+    let defectMap_Button = new PushButton();
+    defectMap_Button.text = "Create defect map";
+    defectMap_Button.toolTip = "<p>Creates a defect map that can be used with the PixInsight process 'DefectMap' " +
+            "to remove a satellite trail by interpolating neighbouring pixels.</p>" +
+            "<p>This option is useful if you only have a single image. " +
+            "If the rejection line is thicker than one pixel, some trace of the " +
+            "satellite trail is likely to be visible.</p>";
+    defectMap_Button.onClick = function () {
+        // Calculate and apply the line
+        drawBlackLine(data, data.targetView, true, true);
+    };
+
+    let ok_Button = new PushButton();
+    ok_Button.text = "OK";
+    ok_Button.cursor = new Cursor(StdCursor_Checkmark);
+    ok_Button.onClick = function () {
+        self.dialog.ok();
+    };
+
+    let cancel_Button = new PushButton();
+    cancel_Button.text = "Cancel";
+    cancel_Button.cursor = new Cursor(StdCursor_Crossmark);
+    cancel_Button.onClick = function () {
+        self.dialog.cancel();
+    };
+
+    let buttons_Sizer = new HorizontalSizer;
+    buttons_Sizer.spacing = 6;
+
+    // New Instance button
+    let newInstance_Button = new ToolButton();
+    newInstance_Button.icon = newInstanceIcon;
+    newInstance_Button.setScaledFixedSize(24, 24);
+    newInstance_Button.toolTip = "Save as Process Icon";
+    newInstance_Button.onMousePress = function () {
+        this.hasFocus = true;
+        this.pushed = false;
+        data.saveParameters();
+        self.dialog.newInstance();
+    };
+
+    let browseDocumentationButton = new ToolButton();
+    browseDocumentationButton.icon = ":/process-interface/browse-documentation.png";
+    browseDocumentationButton.toolTip =
+            "<p>Opens a browser to view the script's documentation.</p>";
+    browseDocumentationButton.onClick = function () {
+        if (scriptName !== undefined && scriptName !== null) {
+            let ok = Dialog.browseScriptDocumentation(scriptName);
+            if (ok)
+                return;
+        }
+        (new MessageBox(
+                HELP_MSG,
+                helpWindowTitle,
+                StdIcon_Information,
+                StdButton_Ok
+                )).execute();
+    };
+
+    buttons_Sizer.add(newInstance_Button);
+    buttons_Sizer.add(browseDocumentationButton);
+
+    let resetButton = new ToolButton();
+
+    resetButton.icon = ":/images/icons/reset.png";
+    resetButton.toolTip = "<p>Resets the dialog's parameters.";
+    resetButton.onClick = function () {
+        data.resetParameters(this.dialog);
+    };
+
+    buttons_Sizer.add(resetButton);
+    buttons_Sizer.addStretch();
+    buttons_Sizer.add(defectMap_Button);
+    buttons_Sizer.add(ok_Button);
+    buttons_Sizer.add(cancel_Button);
 
     //-------------------------------------------------------
     // Vertically stack all the objects
@@ -899,7 +907,7 @@ function main() {
         }
 
         // Calculate and apply the line
-        drawBlackLine(data, data.targetView, true);
+        drawBlackLine(data, data.targetView, true, false);
 
     }
 

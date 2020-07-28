@@ -1,0 +1,4 @@
+To install this script, use 'SCRIPT \> Feature Scripts...' and then in the 'Feature Scripts' dialog box, press the 'Add' button and select the folder where you unzipped this script.
+
+To run the script from PixInsight:
+SCRIPT -> Preprocessing -> RejectSatelliteTrail
